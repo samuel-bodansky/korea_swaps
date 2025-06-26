@@ -32,7 +32,7 @@ loaded_strategy_results = load_strategy_results(pickle_file_path)
 # --- Streamlit App Layout ---
 st.set_page_config(layout="wide", page_title="Strategy Threshold Monitor")
 
-st.title("Yield Curve Strategy Threshold Monitor")
+st.title("Korea Swaps Backtesting")
 st.write("Adjust the thresholds and lookback period to find strategies exceeding your criteria.")
 
 # --- Sidebar for User Inputs ---
@@ -217,7 +217,7 @@ with tab2:
         st.write(
             "Each line represents a specific breach event, showing the yield performance relative to its breach date over the subsequent 40 trading days. An increase means that yield of the fly has decreased.")
 
-        include_cumulative_carry = st.checkbox("Include Cumulative Spot Carry (3m)", value=True,
+        include_cumulative_carry = st.checkbox("Include Cumulative Spot Carry (3m)", value=False,
                                                help="Adds (1/60) of 'Vol Adjusted Carry' from breach day cumulatively each day to the yield change.")
 
         combined_forward_yield_changes_df = pd.DataFrame(index=range(40))
