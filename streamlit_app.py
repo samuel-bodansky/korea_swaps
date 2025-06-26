@@ -8,10 +8,10 @@ import altair as alt  # Import Altair for more advanced plotting
 
 # --- Configuration ---
 market_data_folder = "market_data"
-pickle_file_path = os.path.join(market_data_folder, 'strategy_results1.pkl')
+pickle_file_path = os.path.join(market_data_folder, 'strategy_results3.pkl')
 
 
-# --- Load Data (cached for performance) ---
+# --- Load Data (cached for performance) ----
 @st.cache_data
 def load_strategy_results(path):
     """Loads the pickled strategy results dictionary."""
@@ -52,7 +52,7 @@ vol_adjusted_carry_threshold = st.sidebar.slider(
 )
 z_score_threshold = st.sidebar.slider(
     "Z-score Minimum Threshold",
-    min_value=-3.0, max_value=3.0, value=1.5, step=0.1, format="%.1f",
+    min_value=-3.0, max_value=3.0, value=2.0, step=0.1, format="%.1f",
     help="Strategies where 3m Z-score >= this value. (Higher positive Z-scores indicate 'overbought' conditions)."
 )
 
@@ -68,7 +68,7 @@ lookback_options = {
 selected_lookback_str = st.sidebar.selectbox(
     "Select Lookback Period",
     options=list(lookback_options.keys()),
-    index=1,  # Default to 3 Months
+    index=0,  # Default to 3 Months
     help="Analyze strategies over the last N trading days."
 )
 lookback_days = lookback_options[selected_lookback_str]
@@ -157,7 +157,7 @@ with tab1:
 
                 # For breach calculation, consider a year.
                 # Removed '[:-40]' to ensure all breaches within the lookback are captured for plotting.
-                df_year_lookback_for_breach_check = df_metrics.tail(year_lookback_days)
+                df_year_lookback_for_breach_check = df_metrics.tail(year_lookback_days)[:-40]
 
                 # Ensure required columns exist before applying filters
                 if not all(col in df_year_lookback_for_breach_check.columns for col in required_cols):

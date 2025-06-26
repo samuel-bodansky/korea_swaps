@@ -81,20 +81,41 @@ def calculate_3m_forward_curve_for_day(spot_rates_daily_series, numerical_tenors
     Returns:
         pd.Series: A Series of 3-month forward rates for the current day, indexed by tenor strings, all floats.
     """
-    # Extract values from the Series to ensure numpy array for interp1d (will be floats)
     spot_rates_values = spot_rates_daily_series.values.astype(float)
 
+    # Filter out NaN values for interpolation
+    valid_mask = ~np.isnan(spot_rates_values)
+    valid_numerical_tenors = numerical_tenors_arr[valid_mask]
+    valid_spot_rates = spot_rates_values[valid_mask]
+
+    if len(valid_numerical_tenors) < 2:
+        return pd.Series(np.nan, index=spot_rates_daily_series.index, dtype=float)
+
+    # Determine interpolation kind: cubic requires at least 4 points, otherwise fall back to linear
+    if len(valid_numerical_tenors) >= 4:
+        interp_kind = 'cubic'
+    else:
+        interp_kind = 'linear'
+
     # Create an interpolation function for this day's spot rates
-    # 'kind='linear'' for linear interpolation
     # 'fill_value='extrapolate'' allows calculation beyond the min/max numerical_tenors_arr
-    interp_func = interp1d(numerical_tenors_arr, spot_rates_values, kind='linear', fill_value='extrapolate')
+    # WARNING: Cubic spline extrapolation can produce very aggressive or unrealistic values
+    # when extending far beyond the observed data range.
+    interp_func = interp1d(valid_numerical_tenors, valid_spot_rates, kind=interp_kind, fill_value='extrapolate', bounds_error=False)
 
     forward_rates_daily_list = []
 
     # Iterate through each original tenor point (t1)
     for i in range(len(numerical_tenors_arr)):
         t1 = numerical_tenors_arr[i]
+        if t1==np.float64(20.0):
+            print(1)
         R_t1 = spot_rates_values[i]  # Get the exact spot rate for t1 from the input data (already float)
+
+        # If R_t1 is NaN, skip calculation for this tenor
+        if pd.isna(R_t1):
+            forward_rates_daily_list.append(np.nan)
+            continue
 
         t2 = t1 + target_forward_period_years  # The future point we are looking for (float)
 
@@ -103,18 +124,25 @@ def calculate_3m_forward_curve_for_day(spot_rates_daily_series, numerical_tenors
 
         # Calculate the forward rate using the discrete compounding formula:
         # F(t1, t2) = [((1 + R_t2)^t2 / (1 + R_t1)^t1)^(1/(t2-t1))] - 1
+        # This formula assumes ANNUAL COMPOUNDING for the spot rates.
+        # If your spot rates are compounded differently (e.g., semi-annually, simple),
+        # a different formula should be used.
 
         # Ensure bases for exponentiation are positive and period is positive
         if (1 + R_t1) <= 0 or (1 + R_t2) <= 0 or (t2 - t1) <= 0:
             forward_rate = np.nan  # Result will be NaN (float)
         else:
-            forward_rate = ((1 + R_t2) ** t2 / (1 + R_t1) ** t1) ** (1 / (t2 - t1)) - 1
-            forward_rate = float(forward_rate)  # Explicitly cast to float, though already is
+            base = ((1 + R_t2) ** t2) / ((1 + R_t1) ** t1)
+            if base > 0:
+                forward_rate = base ** (1 / (t2 - t1)) - 1
+            else:
+                forward_rate = np.nan # Cannot compute real forward rate if base is non-positive
 
         forward_rates_daily_list.append(forward_rate)
 
     # Return as a pandas Series, preserving the original tenor string index, ensuring float dtype
-    return pd.Series(forward_rates_daily_list, index=tenors_str, dtype=float)
+    return pd.Series(forward_rates_daily_list, index=spot_rates_daily_series.index, dtype=float)
+
 
 
 def calculate_3m_rolldown_curve_for_day(spot_rates_daily_series: pd.Series,

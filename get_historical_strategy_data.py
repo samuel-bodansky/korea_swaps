@@ -3,6 +3,8 @@ import numpy as np
 from datetime import date, timedelta
 from scipy.interpolate import interp1d
 import os
+from market_data.strategies_list import curve_and_butterfly_strategies
+
 market_data_folder = "market_data"
 os.makedirs(market_data_folder, exist_ok=True)
 from market_data.df_risk import risk
@@ -24,42 +26,6 @@ df_cr = pd.read_csv(os.path.join(market_data_folder, "df_cr.csv"), index_col='Da
                                    parse_dates=True).sort_index()
 
 # Keys are strategy names, values are dictionaries with 'tenors' (numerical) and 'weights'
-strategies = {
-    # --- Existing Curve Strategies ---
-    "2s10s Steepener": {'tenors': ['2y', '10y'], 'weights': [-1, 1]},
-    "5s30s Steepener": {'tenors': ['5y', '30y'], 'weights': [-1, 1]},
-    "1y5y Steepener": {'tenors': ['1y', '5y'], 'weights': [-1, 1]},
-    "2y5y Flattener": {'tenors': ['2y', '5y'], 'weights': [1, -1]},
-    "7y10y Flattener": {'tenors': ['7y', '10y'], 'weights': [1, -1]},
-    "10y30y Steepener": {'tenors': ['10y', '30y'], 'weights': [-1, 1]},
-    "10y30y Flattener": {'tenors': ['10y', '30y'], 'weights': [1, -1]},
-
-    # --- Existing Butterfly Strategies ---
-    "1y2y5y Butterfly": {'tenors': ['1y', '2y', '5y'], 'weights': [1, -2, 1]},
-    "3y5y7y Butterfly": {'tenors': ['3y', '5y', '7y'], 'weights': [1, -2, 1]},
-    "7y10y20y Butterfly": {'tenors': ['7y', '10y', '20y'], 'weights': [1, -2, 1]},
-    "5s10s30s Butterfly": {'tenors': ['5y', '10y', '30y'], 'weights': [1, -2, 1]},
-
-    # --- 10 NEW Butterfly Strategies ---
-    # Very Short End
-    "3m6m1y Butterfly": {'tenors': ['3m', '6m', '1y'], 'weights': [1, -2, 1]},
-    "6m1y2y Butterfly": {'tenors': ['6m', '1y', '2y'], 'weights': [1, -2, 1]},
-
-    # Short-Mid Curve
-    "2y3y5y Butterfly": {'tenors': ['2y', '3y', '5y'], 'weights': [1, -2, 1]},
-    "3y4y6y Butterfly": {'tenors': ['3y', '4y', '6y'], 'weights': [1, -2, 1]},
-    "4y5y8y Butterfly": {'tenors': ['4y', '5y', '8y'], 'weights': [1, -2, 1]},
-
-    # Mid-Long Curve
-    "6y8y10y Butterfly": {'tenors': ['6y', '8y', '10y'], 'weights': [1, -2, 1]},
-    "8y10y12y Butterfly": {'tenors': ['8y', '10y', '12y'], 'weights': [1, -2, 1]},
-    "10y12y15y Butterfly": {'tenors': ['10y', '12y', '15y'], 'weights': [1, -2, 1]},
-
-    # Long End
-    "15y20y30y Butterfly": {'tenors': ['15y', '20y', '30y'], 'weights': [1, -2, 1]},
-    "12y20y30y Butterfly": {'tenors': ['12y', '20y', '30y'], 'weights': [1, -2, 1]}, # Another long end variant
-}
-
 # --- 4. Function to Calculate Strategy Metrics ---
 def calculate_strategy_metrics(strategy_def: dict,
                                df_spot_hist: pd.DataFrame,
@@ -151,7 +117,7 @@ def calculate_strategy_metrics(strategy_def: dict,
 
 # --- 5. Main Loop and Dictionary Creation ---
 strategy_results_dict = {}
-
+strategies = curve_and_butterfly_strategies
 print("--- Calculating Strategy Metrics (including Correlation to 5y Outright Levels) ---")
 for strategy_name, strategy_def in strategies.items():
     print(f"Calculating for: {strategy_name}")
@@ -177,7 +143,7 @@ for strategy_name, df_result in strategy_results_dict.items():
 
 print("\nCalculation Complete!")
 import pickle
-pickle_file_path = os.path.join(market_data_folder, 'strategy_results1.pkl')
+pickle_file_path = os.path.join(market_data_folder, 'strategy_results3.pkl')
 
 try:
     with open(pickle_file_path, 'wb') as f:
