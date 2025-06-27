@@ -20,11 +20,13 @@ tenors_num = np.array([0.25, 0.5, 0.75, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 
 tenors_str_cols = [str(t) for t in tenors_num]  # For DataFrame column names
 
 # --- 2. Load Market Data ---
-df_spot = pd.read_csv(os.path.join(market_data_folder, "df_spot.csv"), index_col='Dates',
+df_spot = pd.read_csv(os.path.join(market_data_folder, "spot_new.csv"), index_col='Dates',
                                   parse_dates=True).sort_index()
-df_cr = pd.read_csv(os.path.join(market_data_folder, "df_cr.csv"), index_col='Dates',
+df_cr = pd.read_csv(os.path.join(market_data_folder, "df_cr_bps.csv"), index_col='Date',
                                    parse_dates=True).sort_index()
-
+df_spot.columns = df_cr.columns
+df_usd_krw= pd.read_csv(os.path.join(market_data_folder, "dollar_won_rate.csv"), index_col='Dates',
+                                   parse_dates=True).sort_index()
 # Keys are strategy names, values are dictionaries with 'tenors' (numerical) and 'weights'
 # --- 4. Function to Calculate Strategy Metrics ---
 def calculate_strategy_metrics(strategy_def: dict,
@@ -58,7 +60,7 @@ def calculate_strategy_metrics(strategy_def: dict,
 
     # --- Weighted Yield ---
     # Dot product of spot rates for relevant tenors with strategy weights
-    weighted_yield = df_spot_hist[strategy_tenors].dot(strategy_weights)
+    weighted_yield = df_spot_hist[strategy_tenors].dot(strategy_weights)*100
     weighted_yield.name = 'Weighted Yield'  # Assign a name to the Series
 
     # --- 3m Z-score ---
@@ -82,7 +84,10 @@ def calculate_strategy_metrics(strategy_def: dict,
     # Total return = daily yield change + weighted carry
     # This is a simplified total return for volatility calculation
     total_return = daily_yield_changes + weighted_carry
-    vol_adjusted_carry = weighted_carry/(weighted_dv01*vol)
+    # vol_adjusted_carry = weighted_carry/(weighted_dv01*vol)
+    vol_adjusted_carry = weighted_carry/(vol)
+    if max(abs(vol_adjusted_carry.dropna()))>2:
+        print(1)
     vol_adjusted_carry.name = 'Vol Adjusted Carry'
 
     # Benchmark daily changes
@@ -108,8 +113,60 @@ def calculate_strategy_metrics(strategy_def: dict,
     abs_beta_diff = (corr_3m - corr_1m).abs()
     abs_beta_diff.name = 'Abs Beta Diff (1m-3m)'
 
+    '''
+    let's calculate dollar won rolling residual 3m
+    '''
+    print(1)
+
+    combined_data_for_residual = pd.DataFrame({
+        'Yield_3m_Spot': weighted_yield,
+        'FX_Rate': df_usd_krw['usdkrw']
+    }).dropna()
+    common_dates = df_usd_krw.index.intersection(weighted_yield.index)
+
+    residual_weighted_yield_df = pd.DataFrame(index=common_dates, columns=['3m Rolling Residual Weighted Yield'])
+
+    if not combined_data_for_residual.empty and len(combined_data_for_residual) >= window_size_days_3m:
+        # Calculate rolling means
+        rolling_mean_yield = combined_data_for_residual['Yield_3m_Spot'].rolling(window=window_size_days_3m).mean()
+        rolling_mean_fx = combined_data_for_residual['FX_Rate'].rolling(window=window_size_days_3m).mean()
+
+        # Calculate rolling covariance and variance
+        rolling_cov = combined_data_for_residual['Yield_3m_Spot'].rolling(window=window_size_days_3m).cov(
+            combined_data_for_residual['FX_Rate'])
+        rolling_var_fx = combined_data_for_residual['FX_Rate'].rolling(window=window_size_days_3m).var()
+
+        # Calculate rolling beta (slope)
+        # Handle division by zero for rolling_var_fx
+        rolling_beta = rolling_cov / rolling_var_fx
+        rolling_beta.replace([np.inf, -np.inf], np.nan, inplace=True)  # Replace inf with NaN
+
+        # Calculate rolling alpha (intercept)
+        rolling_alpha = rolling_mean_yield - rolling_beta * rolling_mean_fx
+
+        # Calculate rolling predicted yield
+        # Ensure alignment of indices for multiplication
+        rolling_predicted_yield = rolling_alpha.reindex(combined_data_for_residual.index) + \
+                                  rolling_beta.reindex(combined_data_for_residual.index) * combined_data_for_residual[
+                                      'FX_Rate']
+
+        # Calculate rolling residuals
+        rolling_residuals = combined_data_for_residual['Yield_3m_Spot'] - rolling_predicted_yield
+
+        # Calculate 3m rolling mean of residuals
+        rolling_residual_weighted_yield = rolling_residuals.rolling(window=window_size_days_3m).mean()
+
+        # Assign the calculated series to the DataFrame, ensuring index alignment
+        residual_weighted_yield_df['3m Rolling Residual Weighted Yield'] = rolling_residual_weighted_yield.reindex(
+            common_dates)
+    else:
+        print("Warning: Not enough data for 3m Rolling Residual Weighted Yield calculation. Result will be NaN.")
+        residual_weighted_yield_df['3m Rolling Residual Weighted Yield'] = np.nan
+    res_series = residual_weighted_yield_df['3m Rolling Residual Weighted Yield']
+
+    # Save the 3m rolling residual weighted yield results to a new CSV file
     # --- Combine all results into a DataFrame ---
-    strategy_df = pd.concat([weighted_yield, z_score_3m, vol, vol_adjusted_carry, corr_1m, corr_3m,abs_beta_diff,weighted_carry], axis=1)
+    strategy_df = pd.concat([weighted_yield, z_score_3m, vol, vol_adjusted_carry, corr_1m, corr_3m,abs_beta_diff,weighted_carry,res_series], axis=1)
 
     # --- Combine results into a DataFrame ---
     return strategy_df
@@ -139,11 +196,11 @@ for strategy_name, strategy_def in strategies.items():
 print("\n--- Results Dictionary (First 5 rows of each strategy's DataFrame) ---")
 for strategy_name, df_result in strategy_results_dict.items():
     print(f"\nStrategy: {strategy_name}")
-    print(df_result.head().to_string())
+    print(df_result.tail().to_string())
 
 print("\nCalculation Complete!")
 import pickle
-pickle_file_path = os.path.join(market_data_folder, 'strategy_results3.pkl')
+pickle_file_path = os.path.join(market_data_folder, 'strategy_results6.pkl')
 
 try:
     with open(pickle_file_path, 'wb') as f:

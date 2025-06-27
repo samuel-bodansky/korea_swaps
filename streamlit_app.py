@@ -5,13 +5,13 @@ import os
 import pickle
 from datetime import timedelta
 import altair as alt  # Import Altair for more advanced plotting
-
+USDKRW_TEXT = '3m Rolling Residual Weighted Yield'
 # --- Configuration ---
 market_data_folder = "market_data"
-pickle_file_path = os.path.join(market_data_folder, 'strategy_results3.pkl')
+pickle_file_path = os.path.join(market_data_folder, 'strategy_results6.pkl')
 
 
-# --- Load Data (cached for performance) ----
+# --- Load Data (cached for performance) -----
 @st.cache_data
 def load_strategy_results(path):
     """Loads the pickled strategy results dictionary."""
@@ -47,7 +47,7 @@ abs_beta_diff_threshold = st.sidebar.slider(
 )
 vol_adjusted_carry_threshold = st.sidebar.slider(
     "Vol Adjusted Carry Minimum Level",
-    min_value=0.0, max_value=0.05, value=0.005, step=0.0001, format="%.4f",
+    min_value=-0.5, max_value=0.5, value=0.1, step=0.005, format="%.4f",
     help="Strategies where Vol Adjusted Carry >= this value. (Usually positive, in decimal format)."
 )
 z_score_threshold = st.sidebar.slider(
@@ -55,7 +55,11 @@ z_score_threshold = st.sidebar.slider(
     min_value=-3.0, max_value=3.0, value=2.0, step=0.1, format="%.1f",
     help="Strategies where 3m Z-score >= this value. (Higher positive Z-scores indicate 'overbought' conditions)."
 )
-
+dollar_won_beta_threshold = st.sidebar.slider(
+    "Dollar-Won Residual Minimum Threshold",
+    min_value=-5.0, max_value=5.0, value=2.0, step=0.1, format="%.1f",
+    help="Strategies where the 3m residual to dollar won is above the threshold. this is a cheapness indicator)."
+)
 # Lookback Period
 st.sidebar.subheader("Lookback Period")
 lookback_options = {
@@ -105,10 +109,12 @@ with tab1:
         condition_beta_diff = (df_filtered['Abs Beta Diff (1m-3m)'].abs() <= abs_beta_diff_threshold)
         condition_vol_adjusted_carry = (df_filtered['Vol Adjusted Carry'] >= vol_adjusted_carry_threshold)
         condition_z_score = (df_filtered['3m Z-score'] >= z_score_threshold)
+        condition_usd_krw = (df_filtered['3m Rolling Residual Weighted Yield'] >= dollar_won_beta_threshold)
+
 
         # Combine conditions: True if ALL conditions are met
         breaching_dates = df_filtered[
-            condition_beta_diff & condition_vol_adjusted_carry & condition_z_score].index.tolist()
+            condition_beta_diff & condition_vol_adjusted_carry & condition_z_score & condition_usd_krw].index.tolist()
 
         if breaching_dates:
             for b_date in breaching_dates:
@@ -117,15 +123,19 @@ with tab1:
                     "Strategy": strategy_name,
                     "Date": b_date.strftime('%Y-%m-%d'),
                     "Abs Beta Diff (1m-3m)": row_data.get('Abs Beta Diff (1m-3m)'),
-                    "Vol Adjusted Carry": row_data.get('Vol Adjusted Carry'),
+                    "Vol Adjusted Carry (bps)": row_data.get('Vol Adjusted Carry'),
                     "3m Z-score": row_data.get('3m Z-score'),
-                    "Breaching Condition(s)": ", ".join([
-                        "Abs Beta Diff" if row_data.get('Abs Beta Diff (1m-3m)', 0) <= abs_beta_diff_threshold else "",
-                        "Vol Adjusted Carry" if row_data.get('Vol Adjusted Carry',
-                                                             0) >= vol_adjusted_carry_threshold else "",
-                        "Z-score" if row_data.get('3m Z-score', 0) >= z_score_threshold else ""
-                    ]).strip(', ').replace(", , ", ", ")
-                })
+                    "USDKRW Residual Yield": row_data.get('3m Rolling Residual Weighted Yield')
+                    # ,
+                    #
+                    # "Breaching Condition(s)": ", ".join([
+                    #     "Abs Beta Diff" if row_data.get('Abs Beta Diff (1m-3m)', 0) <= abs_beta_diff_threshold else "",
+                    #     "Vol Adjusted Carry" if row_data.get('Vol Adjusted Carry',
+                    #                                          0) >= vol_adjusted_carry_threshold else "",
+                    #     "Z-score" if row_data.get('3m Z-score', 0) >= z_score_threshold else ""
+                    # ]).strip(', ').replace(", , ", ", ")
+                }
+                )
 
     if results_list:
         results_df = pd.DataFrame(results_list)
@@ -169,6 +179,7 @@ with tab1:
                 condition_vol_adjusted_carry_year = (
                             df_year_lookback_for_breach_check['Vol Adjusted Carry'] >= vol_adjusted_carry_threshold)
                 condition_z_score_year = (df_year_lookback_for_breach_check['3m Z-score'] >= z_score_threshold)
+                condition_usdkrw_year = (df_year_lookback_for_breach_check[USDKRW_TEXT] >= dollar_won_beta_threshold)
 
                 # Combine conditions (ALL must be met)
                 breaching_dates_year = df_year_lookback_for_breach_check[
@@ -184,15 +195,18 @@ with tab1:
                             "Strategy": strategy_name,
                             "Date": b_date_year.strftime('%Y-%m-%d'),
                             "Abs Beta Diff (1m-3m)": row_data_year.get('Abs Beta Diff (1m-3m)'),
-                            "Vol Adjusted Carry": row_data_year.get('Vol Adjusted Carry'),
+                            "Vol Adjusted Carry (bps)": row_data_year.get('Vol Adjusted Carry'),
                             "3m Z-score": row_data_year.get('3m Z-score'),
-                            "Breaching Condition(s)": ", ".join([
-                                "Abs Beta Diff" if row_data_year.get('Abs Beta Diff (1m-3m)',
-                                                                     0) <= abs_beta_diff_threshold else "",
-                                "Vol Adjusted Carry" if row_data_year.get('Vol Adjusted Carry',
-                                                                          0) >= vol_adjusted_carry_threshold else "",
-                                "Z-score" if row_data_year.get('3m Z-score', 0) >= z_score_threshold else ""
-                            ]).strip(', ').replace(", , ", ", ")
+                            USDKRW_TEXT: row_data_year.get(USDKRW_TEXT),
+
+                            # ,
+                            # "Breaching Condition(s)": ", ".join([
+                            #     "Abs Beta Diff" if row_data_year.get('Abs Beta Diff (1m-3m)',
+                            #                                          0) <= abs_beta_diff_threshold else "",
+                            #     "Vol Adjusted Carry" if row_data_year.get('Vol Adjusted Carry',
+                            #                                               0) >= vol_adjusted_carry_threshold else "",
+                            #     "Z-score" if row_data_year.get('3m Z-score', 0) >= z_score_threshold else ""
+                            # ]).strip(', ').replace(", , ", ", ")
                         })
 
             if all_breaches_year_list:
@@ -254,7 +268,7 @@ with tab2:
                 continue
 
             yield_at_breach = forward_slice.iloc[0][yield_column_name]
-            forward_pnl_series = -1 * 100 * (forward_slice[yield_column_name] - yield_at_breach)
+            forward_pnl_series = -1  * (forward_slice[yield_column_name] - yield_at_breach)
 
             if current_line_include_carry:
                 spot_carry_on_breach_day = forward_slice.iloc[0][carry_column_name]
@@ -541,8 +555,10 @@ with tab3:
                                 x='Date:T',
                                 y=f'{yield_column_name}:Q',
                                 tooltip=[alt.Tooltip('Date:T', title='Breach Date'),
-                                         alt.Tooltip(f'{yield_column_name}:Q', title='Yield at Breach', format='.4f'),
-                                         alt.Tooltip('Breaching Condition(s)', title='Conditions')]
+                                         alt.Tooltip(f'{yield_column_name}:Q', title='Yield at Breach', format='.4f')
+                                    # ,
+                                         # alt.Tooltip('Breaching Condition(s)', title='Conditions')
+                                         ]
                             )
                             chart = line + circles
                         else:
@@ -576,3 +592,5 @@ st.markdown(
     "- **1m/3m Beta to 5y**: Rolling beta of the strategy's daily yield changes to the 5-year daily spot rate changes.")
 st.markdown(
     "- **Abs Beta Diff (1m-3m)**:  Absolute difference between 1-month and 3-month rolling betas to 5y. Lower values indicate more stable beta.")
+st.markdown(
+   f"- **{USDKRW_TEXT}**: 3 month rolling residual of the weighted yield to dollar-won. Higher value indicates cheapness")
